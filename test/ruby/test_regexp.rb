@@ -1299,6 +1299,12 @@ class TestRegexp < Test::Unit::TestCase
     end
   end
 
+  def test_too_big_number_for_repeat_range
+    assert_raise_with_message(SyntaxError, /too big number for repeat range/) do
+      eval(%[/|{1000000}/])
+    end
+  end
+
   # This assertion is for porting x2() tests in testpy.py of Onigmo.
   def assert_match_at(re, str, positions, msg = nil)
     re = Regexp.new(re) unless re.is_a?(Regexp)
@@ -1327,5 +1333,31 @@ class TestRegexp < Test::Unit::TestCase
       errs.map {|str, match| "\t#{'not ' unless match}match #{str.inspect}"}.join(",\n")
     }
     assert_empty(errs, msg)
+  end
+
+
+  def test_too_many_range_repeat
+    source = '(?:foobar){0,100}' * 100000
+    assert_raise(RegexpError) { Regexp.new(source) }
+    assert_raise(SyntaxError) { eval("/#{source}/") }
+  end
+
+  def test_too_many_null_check
+    source = '(?:(?:foo)?|(?:bar)?)*' * 100000
+    assert_raise(RegexpError) { Regexp.new(source) }
+    assert_raise(SyntaxError) { eval("/#{source}/") }
+  end
+
+
+  def test_nested_repeat_expansion_overflow
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}", timeout: 30)
+    begin;
+      # A nested repeat whose expanded size overflows int must not be
+      # unrolled: the compiler used to hang or emit wrapped jump offsets.
+      ["(?:.{90000,}){90000}", "(?:.{46341,}){46341}"].each do |src|
+        re = Regexp.new(src)
+        assert_nil(re.match("x" * 10), src)
+      end
+    end;
   end
 end
